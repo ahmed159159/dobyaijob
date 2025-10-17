@@ -2,73 +2,73 @@ import axios from "axios";
 import dotenv from "dotenv";
 dotenv.config();
 
-/**
- * Calls Fireworks / Dobby model to extract search parameters from a natural query.
- * Returns a normalized object:
- * { role, location, country, experience, employment_type, remote, salary_min, raw }
- */
-export async function analyzeQueryWithDobby(userQuery) {
-  const system = "You are a structured data extraction assistant. Extract job-search parameters from the user's query and return VALID JSON only.";
-  const userPrompt = `
-User query: "${userQuery}"
+// use either FIREWORKS_API_KEY or DOBBY_API_KEY (compatibility)
+const FIREWORKS_KEY = process.env.FIREWORKS_API_KEY || process.env.DOBBY_API_KEY;
+const FIREWORKS_ENDPOINT = "https://api.fireworks.ai/inference/v1/chat/completions";
+const DOBBY_MODEL = "sentientfoundation/dobby-unhinged-llama-3-3-70b-new";
 
-Return a JSON object with the following fields (use empty string if unknown):
+/**
+ * call Dobby (Fireworks) with system prompt + user message
+ * returns object: { replyText, parsed: { role, location, country, experience }, raw }
+ * parsed fields may be empty strings if not provided by user
+ */
+export async function askDobby(userMessage) {
+  const systemPrompt = `
+You are Dobby, an intelligent job search assistant.
+Your main task is to help users find relevant job opportunities using the Adzuna API.
+
+Behavior:
+- Ask clarifying questions if the user request is missing any of: country, job title/specialization, years of experience.
+- If the user already provided all required info in one message, respond with JSON ONLY (no extra text) in this exact format:
 {
-  "role": "",            // e.g. "frontend developer", "marketing"
-  "location": "",        // e.g. "Berlin", "Germany", "remote"
-  "country": "",         // country name if mentioned, e.g. "Germany"
-  "experience": "",      // e.g. "2 years", "senior", "entry-level"
-  "employment_type": "", // "full-time", "part-time", "contract", "internship"
-  "remote": "",          // "yes" or "no" or ""
-  "salary_min": ""       // numeric or empty
+  "role": "frontend developer",
+  "location": "Berlin",
+  "country": "Germany",
+  "experience": "3 years",
+  "action": "search"
 }
-Only output the JSON object and nothing else.
+- If some info is missing, reply with a short clarifying question in plain text (e.g., "Which country do you prefer?" or "How many years of experience do you have?").
+- After user answers clarifying questions and all fields are collected, respond with a short summary sentence and then the action "search" in JSON (same format).
+- Never include API keys or raw API URLs in responses.
+- Keep replies concise and user-friendly.
 `;
 
   try {
     const resp = await axios.post(
-      "https://api.fireworks.ai/inference/v1/chat/completions",
+      FIREWORKS_ENDPOINT,
       {
-        model: "sentientfoundation/dobby-unhinged-llama-3-3-70b-new",
+        model: DOBBY_MODEL,
         messages: [
-          { role: "system", content: system },
-          { role: "user", content: userPrompt }
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userMessage }
         ],
-        max_tokens: 300
+        max_tokens: 400,
+        temperature: 0.0
       },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.FIREWORKS_API_KEY}`,
-          "Content-Type": "application/json"
-        }
-      }
+      { headers: { Authorization: `Bearer ${FIREWORKS_KEY}`, "Content-Type": "application/json" } }
     );
 
-    const content = resp.data?.choices?.[0]?.message?.content?.trim();
-    if (!content) {
-      return { raw: "", role: "", location: "", country: "", experience: "", employment_type: "", remote: "", salary_min: "" };
+    const content = resp.data?.choices?.[0]?.message?.content?.trim() || "";
+    // attempt to parse JSON substring
+    let parsed = null;
+    try {
+      // first try direct parse
+      parsed = JSON.parse(content);
+    } catch (e) {
+      const match = content.match(/\{[\s\S]*\}/);
+      if (match) {
+        try { parsed = JSON.parse(match[0]); } catch {}
+      }
     }
 
-    // Try parse JSON safely
-    try {
-      const parsed = JSON.parse(content);
-      return { ...parsed, raw: content };
-    } catch (e) {
-      // fallback: attempt to extract a JSON-looking substring
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        try {
-          const parsed = JSON.parse(jsonMatch[0]);
-          return { ...parsed, raw: content };
-        } catch (err) {
-          // give raw text if parsing fails
-          return { raw: content, role: "", location: "", country: "", experience: "", employment_type: "", remote: "", salary_min: "" };
-        }
-      }
-      return { raw: content, role: "", location: "", country: "", experience: "", employment_type: "", remote: "", salary_min: "" };
-    }
+    const result = {
+      replyText: parsed ? null : content, // if parsed JSON, replyText null (we'll act)
+      parsed: parsed || { role: "", location: "", country: "", experience: "", action: "" },
+      raw: content
+    };
+    return result;
   } catch (err) {
-    console.error("Dobby API error:", err.message || err.toString());
-    return { raw: "", role: "", location: "", country: "", experience: "", employment_type: "", remote: "", salary_min: "" };
+    console.error("Dobby error:", err?.response?.data || err.message || err);
+    return { replyText: "Sorry, Dobby is temporarily unavailable.", parsed: { role: "", location: "", country: "", experience: "", action: "" }, raw: "" };
   }
 }
