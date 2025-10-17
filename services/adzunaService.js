@@ -1,50 +1,42 @@
-import fetch from "node-fetch";
+import axios from "axios";
+import dotenv from "dotenv";
+dotenv.config();
 
-export async function searchJobs(query, location = "us") {
+const ADZUNA_BASE = "https://api.adzuna.com/v1/api/jobs";
+
+/**
+ * Search Adzuna
+ * - countryCode e.g. 'gb' or 'de'
+ * - what: job title/keywords
+ * - where: location/city (optional)
+ */
+export async function searchAdzuna(what = "", where = "", countryCode = process.env.ADZUNA_COUNTRY || "gb", results_per_page = 6) {
   try {
-    const appId = process.env.ADZUNA_APP_ID;
-    const apiKey = process.env.ADZUNA_APP_KEY;
-    const country = location.toLowerCase() || process.env.ADZUNA_COUNTRY || "us";
+    const url = `${ADZUNA_BASE}/${countryCode}/search/1`;
+    const params = {
+      app_id: process.env.ADZUNA_APP_ID,
+      app_key: process.env.ADZUNA_APP_KEY,
+      what,
+      where,
+      results_per_page,
+      sort_by: "relevance"
+    };
 
-    const apiUrl = `https://api.adzuna.com/v1/api/jobs/${country}/search/1?app_id=${appId}&app_key=${apiKey}&results_per_page=5&what=${encodeURIComponent(
-      query
-    )}`;
-
-    const response = await fetch(apiUrl);
-    if (!response.ok) {
-      throw new Error(`Adzuna API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-
-    // لو مفيش نتائج
-    if (!data.results || data.results.length === 0) {
-      return [
-        {
-          title: "No jobs found",
-          company: "N/A",
-          location: "N/A",
-          redirect_url: "",
-        },
-      ];
-    }
-
-    // نرجع النتائج بشكل منسق
-    return data.results.map((job) => ({
-      title: job.title,
-      company: job.company.display_name,
-      location: job.location.display_name,
-      url: job.redirect_url,
+    const resp = await axios.get(url, { params, headers: { Accept: "application/json" } });
+    const jobs = resp.data?.results || [];
+    return jobs.map(j => ({
+      id: j.id || "",
+      title: j.title || "",
+      company: j.company?.display_name || "",
+      location: j.location?.display_name || "",
+      description: j.description ? (j.description.slice(0, 250) + (j.description.length > 250 ? "..." : "")) : "",
+      redirect_url: j.redirect_url || "",
+      salary_min: j.salary_min || null,
+      salary_max: j.salary_max || null,
+      created: j.created || ""
     }));
-  } catch (error) {
-    console.error("Error fetching jobs from Adzuna:", error);
-    return [
-      {
-        title: "Error fetching jobs",
-        company: "N/A",
-        location: "N/A",
-        redirect_url: "",
-      },
-    ];
+  } catch (err) {
+    console.error("Adzuna error:", err?.response?.data || err.message || err);
+    return [];
   }
 }
