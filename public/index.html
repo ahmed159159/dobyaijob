@@ -1,98 +1,38 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Dobby — AI Job Finder</title>
-  <style>
-    body{font-family:Arial,Helvetica,sans-serif;background:#f2f6fb;margin:0;padding:0}
-    .app{max-width:820px;margin:24px auto;background:#fff;border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.06);overflow:hidden}
-    header{background:#2563eb;color:#fff;padding:18px 20px}
-    header h1{margin:0;font-size:20px}
-    .chat{padding:16px;height:520px;overflow:auto}
-    .input-area{display:flex;padding:12px;border-top:1px solid #eee}
-    input[type="text"]{flex:1;padding:10px;border:1px solid #ddd;border-radius:6px;margin-right:8px}
-    button{background:#2563eb;color:#fff;border:none;padding:10px 14px;border-radius:6px;cursor:pointer}
-    .msg{margin:10px 0;display:flex}
-    .user{justify-content:flex-end}
-    .bubble{max-width:75%;padding:10px 12px;border-radius:12px;background:#eef2ff}
-    .bubble.user{background:#dcf1ff}
-    .job{padding:10px;border:1px solid #eee;border-radius:8px;margin:8px 0}
-    .small{font-size:13px;color:#555}
-  </style>
+  <meta charset="UTF-8">
+  <title>AI Job Finder</title>
 </head>
 <body>
-  <div class="app">
-    <header><h1>Dobby — AI Job Finder</h1></header>
-    <div class="chat" id="chat"></div>
-    <div class="input-area">
-      <input id="msg" type="text" placeholder="Ask Dobby: e.g. 'Looking for frontend jobs in Germany with 2 years experience'"/>
-      <button id="send">Send</button>
-    </div>
-  </div>
+  <h1>🔍 AI Job Finder</h1>
+  <form id="jobForm">
+    <input type="text" id="title" placeholder="Job title" required>
+    <input type="text" id="country" placeholder="Country (gb, de, etc.)" required>
+    <input type="text" id="experience" placeholder="Experience years">
+    <button type="submit">Search</button>
+  </form>
+  <ul id="results"></ul>
 
-<script>
-const chatEl = document.getElementById("chat");
-const msgInput = document.getElementById("msg");
-const sendBtn = document.getElementById("send");
+  <script>
+    const form = document.getElementById("jobForm");
+    const results = document.getElementById("results");
 
-function appendMessage(text, from = "bot") {
-  const div = document.createElement("div");
-  div.className = "msg " + (from === "user" ? "user" : "bot");
-  const b = document.createElement("div");
-  b.className = "bubble " + (from === "user" ? "user" : "");
-  b.innerHTML = text;
-  div.appendChild(b);
-  chatEl.appendChild(div);
-  chatEl.scrollTop = chatEl.scrollHeight;
-}
-
-async function sendMessage() {
-  const text = msgInput.value.trim();
-  if (!text) return;
-  appendMessage(text, "user");
-  msgInput.value = "";
-  appendMessage("Dobby is thinking...", "bot");
-
-  try {
-    const res = await fetch("/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: text })
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      results.innerHTML = "Loading...";
+      const res = await fetch("/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: document.getElementById("title").value,
+          country: document.getElementById("country").value,
+          experience: document.getElementById("experience").value
+        })
+      });
+      const jobs = await res.json();
+      results.innerHTML = jobs.map(job => `<li><a href="${job.redirect_url}" target="_blank">${job.title} - ${job.company.display_name}</a></li>`).join("");
     });
-    const data = await res.json();
-    // remove last "thinking" bubble
-    chatEl.lastChild.remove();
-
-    if (data.type === "clarify") {
-      appendMessage(data.text, "bot");
-    } else if (data.type === "results") {
-      appendMessage(`<div class="small">${data.summary}</div>`, "bot");
-      if (Array.isArray(data.jobs) && data.jobs.length) {
-        data.jobs.forEach(job => {
-          const jHtml = `<div class="job">
-            <div><strong>${job.title}</strong></div>
-            <div class="small">${job.company} — ${job.location}</div>
-            <div class="small">${job.description || ""}</div>
-            <div style="margin-top:8px"><a href="${job.redirect_url}" target="_blank">View job</a></div>
-          </div>`;
-          appendMessage(jHtml, "bot");
-        });
-      } else {
-        appendMessage("No jobs found.", "bot");
-      }
-    } else {
-      appendMessage("Sorry, unexpected response from server.", "bot");
-    }
-  } catch (err) {
-    console.error(err);
-    chatEl.lastChild.remove();
-    appendMessage("Error contacting server.", "bot");
-  }
-}
-
-sendBtn.onclick = sendMessage;
-msgInput.addEventListener("keydown", (e) => { if (e.key === "Enter") sendMessage(); });
-</script>
+  </script>
 </body>
 </html>
