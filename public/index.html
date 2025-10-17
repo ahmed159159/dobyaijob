@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Job Finder</title>
+</head>
+<body>
+  <h2>🔍 Search for Jobs</h2>
+  <input id="query" placeholder="Job title..." />
+  <input id="location" placeholder="Location..." />
+  <button onclick="searchJobs()">Search</button>
+
+  <div id="results"></div>
+
+  <script>
+    async function searchJobs() {
+      const query = document.getElementById("query").value;
+      const location = document.getElementById("location").value;
+
+      const res = await fetch("/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query, location })
+      });
+
+      const data = await res.json();
+      const resultsDiv = document.getElementById("results");
+      resultsDiv.innerHTML = "";
+
+      data.results.forEach(job => {
+        const div = document.createElement("div");
+        div.innerHTML = `<p><strong>${job.title}</strong> - ${job.company} (${job.location})<br><a href="${job.url}" target="_blank">View Job</a></p>`;
+        resultsDiv.appendChild(div);
+      });
+    }
+  </script>
+</body>
+</html>
