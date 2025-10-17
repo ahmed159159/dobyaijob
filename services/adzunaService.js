@@ -1,41 +1,50 @@
-import axios from "axios";
+import fetch from "node-fetch";
 
-/**
- * Search jobs from Adzuna API
- * @param {string} query - job title or keywords (e.g., "software engineer")
- * @param {string} location - location or city (e.g., "Berlin")
- * @param {string} country - country code (e.g., "de", "gb", "us")
- * @returns {Promise<Array>} list of job results
- */
-export async function searchJobs(query, location, country = process.env.ADZUNA_COUNTRY) {
-  const url = `https://api.adzuna.com/v1/api/jobs/${country}/search/1`;
-
-  const params = {
-    app_id: process.env.ADZUNA_APP_ID,
-    app_key: process.env.ADZUNA_APP_KEY,
-    what: query,
-    where: location,
-    results_per_page: 10,
-    content_type: "application/json",
-  };
-
+export async function searchJobs(query, location = "us") {
   try {
-    const response = await axios.get(url, { params });
-    const jobs = response.data.results || [];
+    const appId = process.env.ADZUNA_APP_ID;
+    const apiKey = process.env.ADZUNA_APP_KEY;
+    const country = location.toLowerCase() || process.env.ADZUNA_COUNTRY || "us";
 
-    return jobs.map((job) => ({
-      title: job.title || "Untitled",
-      company: job.company?.display_name || "Unknown Company",
-      location: job.location?.display_name || "Unknown Location",
-      description: job.description?.slice(0, 150) + "...",
+    const apiUrl = `https://api.adzuna.com/v1/api/jobs/${country}/search/1?app_id=${appId}&app_key=${apiKey}&results_per_page=5&what=${encodeURIComponent(
+      query
+    )}`;
+
+    const response = await fetch(apiUrl);
+    if (!response.ok) {
+      throw new Error(`Adzuna API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+
+    // لو مفيش نتائج
+    if (!data.results || data.results.length === 0) {
+      return [
+        {
+          title: "No jobs found",
+          company: "N/A",
+          location: "N/A",
+          redirect_url: "",
+        },
+      ];
+    }
+
+    // نرجع النتائج بشكل منسق
+    return data.results.map((job) => ({
+      title: job.title,
+      company: job.company.display_name,
+      location: job.location.display_name,
       url: job.redirect_url,
-      salary:
-        job.salary_min && job.salary_max
-          ? `${job.salary_min} - ${job.salary_max}`
-          : "Not specified",
     }));
   } catch (error) {
-    console.error("❌ Error fetching jobs from Adzuna:", error.message);
-    throw new Error("Failed to fetch job listings from Adzuna API.");
+    console.error("Error fetching jobs from Adzuna:", error);
+    return [
+      {
+        title: "Error fetching jobs",
+        company: "N/A",
+        location: "N/A",
+        redirect_url: "",
+      },
+    ];
   }
 }
