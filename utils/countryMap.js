@@ -1,4 +1,4 @@
-// maps common country names (lowercase) to Adzuna country codes
+// small helper map to convert common names/tokens to Adzuna country codes
 export const countryMap = {
   "uk": "gb",
   "united kingdom": "gb",
@@ -25,5 +25,5 @@ export const countryMap = {
   "united arab emirates": "ae",
   "uae": "ae",
   "dubai": "ae",
-  "egypt": "eg", // not officially supported by Adzuna in many cases, but kept for parsing
+  "egypt": "eg"
 };
