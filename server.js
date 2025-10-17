@@ -1,42 +1,74 @@
-import express from "express";
-import cors from "cors";
+import axios from "axios";
 import dotenv from "dotenv";
-import { analyzeQuery } from "./services/dobbyService.js";
-import { searchJobs } from "./services/adzunaService.js";
-
 dotenv.config();
-const app = express();
-app.use(cors());
-app.use(express.json());
 
-app.get("/", (req, res) => {
-  res.send("🤖 AI Job Finder API is running successfully!");
-});
+/**
+ * Calls Fireworks / Dobby model to extract search parameters from a natural query.
+ * Returns a normalized object:
+ * { role, location, country, experience, employment_type, remote, salary_min, raw }
+ */
+export async function analyzeQueryWithDobby(userQuery) {
+  const system = "You are a structured data extraction assistant. Extract job-search parameters from the user's query and return VALID JSON only.";
+  const userPrompt = `
+User query: "${userQuery}"
 
-app.post("/api/search", async (req, res) => {
+Return a JSON object with the following fields (use empty string if unknown):
+{
+  "role": "",            // e.g. "frontend developer", "marketing"
+  "location": "",        // e.g. "Berlin", "Germany", "remote"
+  "country": "",         // country name if mentioned, e.g. "Germany"
+  "experience": "",      // e.g. "2 years", "senior", "entry-level"
+  "employment_type": "", // "full-time", "part-time", "contract", "internship"
+  "remote": "",          // "yes" or "no" or ""
+  "salary_min": ""       // numeric or empty
+}
+Only output the JSON object and nothing else.
+`;
+
   try {
-    const { query } = req.body;
-    if (!query) return res.status(400).json({ error: "Missing 'query' in body" });
+    const resp = await axios.post(
+      "https://api.fireworks.ai/inference/v1/chat/completions",
+      {
+        model: "sentientfoundation/dobby-unhinged-llama-3-3-70b-new",
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: userPrompt }
+        ],
+        max_tokens: 300
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.FIREWORKS_API_KEY}`,
+          "Content-Type": "application/json"
+        }
+      }
+    );
 
-    console.log("🧠 Analyzing:", query);
-    const analysis = await analyzeQuery(query);
+    const content = resp.data?.choices?.[0]?.message?.content?.trim();
+    if (!content) {
+      return { raw: "", role: "", location: "", country: "", experience: "", employment_type: "", remote: "", salary_min: "" };
+    }
 
-    if (!analysis?.role && !analysis?.location)
-      return res.json({ message: "Could not understand query", analysis });
-
-    console.log("🔍 Searching:", analysis);
-    const jobs = await searchJobs({
-      role: analysis.role,
-      location: analysis.location
-    });
-
-    res.json({ analysis, jobs });
+    // Try parse JSON safely
+    try {
+      const parsed = JSON.parse(content);
+      return { ...parsed, raw: content };
+    } catch (e) {
+      // fallback: attempt to extract a JSON-looking substring
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        try {
+          const parsed = JSON.parse(jsonMatch[0]);
+          return { ...parsed, raw: content };
+        } catch (err) {
+          // give raw text if parsing fails
+          return { raw: content, role: "", location: "", country: "", experience: "", employment_type: "", remote: "", salary_min: "" };
+        }
+      }
+      return { raw: content, role: "", location: "", country: "", experience: "", employment_type: "", remote: "", salary_min: "" };
+    }
   } catch (err) {
-    console.error("🔥 Error:", err.message);
-    res.status(500).json({ error: "Internal server error" });
+    console.error("Dobby API error:", err.message || err.toString());
+    return { raw: "", role: "", location: "", country: "", experience: "", employment_type: "", remote: "", salary_min: "" };
   }
-});
-
-app.listen(process.env.PORT || 3000, () => {
-  console.log(`✅ Server running on port ${process.env.PORT || 3000}`);
-});
+}
