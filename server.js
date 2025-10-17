@@ -1,64 +1,69 @@
 import express from "express";
+import fetch from "node-fetch";
 import cors from "cors";
 import dotenv from "dotenv";
-import axios from "axios";
-import { searchJobs } from "./services/adzunaService.js";
 
 dotenv.config();
-
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Test route
+// ✅ Get environment variables
+const ADZUNA_APP_ID = process.env.ADZUNA_APP_ID;
+const ADZUNA_APP_KEY = process.env.ADZUNA_APP_KEY;
+const ADZUNA_COUNTRY = process.env.ADZUNA_COUNTRY || "us";
+const FIREWORKS_API_KEY = process.env.FIREWORKS_API_KEY;
+
+// ✅ Home route
 app.get("/", (req, res) => {
-  res.send("✅ AI Job Finder is running!");
+  res.send("AI Job Finder is running 🚀");
 });
 
-// Route to search jobs directly
-app.get("/search", async (req, res) => {
-  const { query, location, country } = req.query;
-  if (!query) {
-    return res.status(400).json({ error: "Missing job query." });
-  }
-
-  try {
-    const results = await searchJobs(query, location, country);
-    res.json({ results });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Route to interact with Dobby AI
+// ✅ Main route
 app.post("/ask", async (req, res) => {
-  const { question } = req.body;
-  if (!question) return res.status(400).json({ error: "Missing question." });
+  const userInput = req.body.question;
 
   try {
-    const aiResponse = await axios.post(
-      "https://api.fireworks.ai/inference/v1/chat/completions",
-      {
-        model: "sentientfoundation/dobby-unhinged-llama-3-3-70b-new",
-        messages: [
-          { role: "system", content: "You are a job assistant AI that helps users find jobs via Adzuna API." },
-          { role: "user", content: question },
-        ],
+    // 🧠 Step 1: Ask Dobby AI to extract job query info
+    const aiResponse = await fetch("https://api.fireworks.ai/inference/v1/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${FIREWORKS_API_KEY}`,
       },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.DOBBY_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-      }
-    );
+      body: JSON.stringify({
+        model: "sentientfoundation/dobby-unhinged-llama-3-3-70b-new",
+        prompt: `User asked: "${userInput}". 
+Extract what kind of job they want, location, and experience. 
+Return JSON like: {"job_title": "", "location": "", "experience": ""}`,
+        max_tokens: 150,
+      }),
+    });
 
-    res.json({ reply: aiResponse.data });
-  } catch (error) {
-    console.error("❌ Error with Dobby API:", error.message);
-    res.status(500).json({ error: "Dobby AI request failed." });
+    const aiData = await aiResponse.json();
+    const text = aiData?.choices?.[0]?.text || "{}";
+    const { job_title, location } = JSON.parse(text);
+
+    // 🧭 Step 2: Call Adzuna API
+    const adzunaUrl = `https://api.adzuna.com/v1/api/jobs/${ADZUNA_COUNTRY}/search/1?app_id=${ADZUNA_APP_ID}&app_key=${ADZUNA_APP_KEY}&results_per_page=5&what=${encodeURIComponent(job_title)}&where=${encodeURIComponent(location)}`;
+    const adzunaRes = await fetch(adzunaUrl);
+    const adzunaData = await adzunaRes.json();
+
+    // 🎯 Step 3: Format jobs
+    const jobs = adzunaData.results?.map(j => ({
+      title: j.title,
+      company: j.company.display_name,
+      location: j.location.display_name,
+      url: j.redirect_url,
+    }));
+
+    res.json({ jobs });
+  } catch (err) {
+    console.error("Error:", err);
+    res.status(500).json({ error: "Something went wrong" });
   }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
+// ✅ Railway uses PORT automatically
+const PORT = process.env.PORT || 8080;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
