@@ -1,36 +1,28 @@
 import axios from "axios";
-import dotenv from "dotenv";
-dotenv.config();
 
-export async function searchAdzunaJobs({ what = "", where = "", countryCode = "gb", page = 1, results_per_page = 10 }) {
-  const url = `https://api.adzuna.com/v1/api/jobs/${countryCode}/search/${page}`;
-
+export async function searchJobs(query, location, country = process.env.ADZUNA_COUNTRY) {
+  const url = `https://api.adzuna.com/v1/api/jobs/${country}/search/1`;
   const params = {
     app_id: process.env.ADZUNA_APP_ID,
     app_key: process.env.ADZUNA_APP_KEY,
-    results_per_page,
-    what,
-    where,
-    sort_by: "relevance"
+    what: query,
+    where: location,
+    results_per_page: 10,
+    content_type: "application/json",
   };
 
   try {
-    const res = await axios.get(url, { params, headers: { Accept: "application/json" } });
-    const results = res.data?.results || [];
-
-    return results.map((job) => ({
-      id: job.id || "",
-      title: job.title || "",
-      company: job.company?.display_name || "",
-      location: job.location?.display_name || "",
-      salary_min: job.salary_min || null,
-      salary_max: job.salary_max || null,
-      description: job.description ? job.description.slice(0, 300) + (job.description.length > 300 ? "..." : "") : "",
-      redirect_url: job.redirect_url || job.redirect_url_alt || "",
-      created: job.created || ""
+    const response = await axios.get(url, { params });
+    return response.data.results.map((job) => ({
+      title: job.title,
+      company: job.company.display_name,
+      location: job.location.display_name,
+      description: job.description,
+      url: job.redirect_url,
+      salary: job.salary_min && job.salary_max ? `${job.salary_min} - ${job.salary_max}` : "N/A",
     }));
-  } catch (err) {
-    console.error("Adzuna API error:", err.message || err.toString());
-    return [];
+  } catch (error) {
+    console.error("Error fetching jobs from Adzuna:", error.message);
+    throw new Error("Failed to fetch job listings.");
   }
 }
