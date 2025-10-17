@@ -23,7 +23,6 @@ export async function searchJobs(query, location, country = process.env.ADZUNA_C
     const response = await axios.get(url, { params });
     const jobs = response.data.results || [];
 
-    // Format job results
     return jobs.map((job) => ({
       title: job.title || "Untitled",
       company: job.company?.display_name || "Unknown Company",
