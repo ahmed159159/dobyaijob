@@ -1,7 +1,7 @@
 {
   "name": "ai-job-finder",
   "version": "1.0.0",
-  "description": "AI-powered job search assistant using Adzuna API + Dobby model (Fireworks)",
+  "description": "AI powered job search (Adzuna + Fireworks/Dobby)",
   "main": "server.js",
   "type": "module",
   "scripts": {
